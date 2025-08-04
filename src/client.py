@@ -1,110 +1,258 @@
 import socket
-from common import create_board, print_board, check_win
+import sys
+from common import create_board, print_board, check_win, BOARD_SIZE
 
 def recv_move(sock):
+    """Nhận nước đi từ đối thủ"""
     try:
-        data = sock.recv(1024).decode().strip()
+        data = sock.recv(1024).decode('utf-8').strip()
         if not data:
             print("⛔ Mất kết nối với đối thủ.")
             return None
+        
         x, y = map(int, data.split())
         return x, y
-    except:
-        print("⛔ Lỗi khi nhận dữ liệu từ đối thủ.")
+    except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+        print("⛔ Đối thủ đã ngắt kết nối.")
+        return None
+    except ValueError:
+        print("⛔ Dữ liệu từ đối thủ không hợp lệ.")
+        return None
+    except Exception as e:
+        print(f"⛔ Lỗi khi nhận dữ liệu: {e}")
         return None
 
 def send_move(sock, x, y):
+    """Gửi nước đi cho đối thủ"""
     try:
-        sock.send(f"{x} {y}".encode())
-    except:
-        print("⛔ Gửi dữ liệu thất bại.")
+        message = f"{x} {y}"
+        sock.send(message.encode('utf-8'))
+        print(f"📤 Đã gửi nước đi: ({x}, {y})")
+        return True
+    except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+        print("⛔ Không thể gửi - đối thủ đã ngắt kết nối.")
+        return False
+    except Exception as e:
+        print(f"⛔ Gửi dữ liệu thất bại: {e}")
+        return False
 
 def get_valid_move(board, symbol):
+    """Nhập nước đi hợp lệ từ người chơi"""
     while True:
         try:
-            x, y = map(int, input(f"Bạn ({symbol}) nhập tọa độ (x y): ").split())
-            if not (0 <= x < len(board) and 0 <= y < len(board[0])):
-                print("⚠️ Tọa độ nằm ngoài bàn cờ.")
+            print(f"\n💡 Nhập tọa độ từ 0 đến {BOARD_SIZE-1}")
+            move_input = input(f"🎯 Bạn ({symbol}) nhập tọa độ (x y): ").strip()
+            
+            if move_input.lower() in ['quit', 'exit', 'q']:
+                print("👋 Bạn đã thoát game.")
+                return -1, -1
+            
+            x, y = map(int, move_input.split())
+            
+            if not (0 <= x < BOARD_SIZE and 0 <= y < BOARD_SIZE):
+                print(f"⚠️ Tọa độ phải từ 0 đến {BOARD_SIZE-1}.")
                 continue
+                
             if board[x][y] != ".":
-                print("⚠️ Ô đã được đánh.")
+                print("⚠️ Ô này đã có quân cờ. Chọn ô khác.")
                 continue
+                
             return x, y
+            
         except ValueError:
-            print("⚠️ Nhập sai định dạng. Hãy nhập x y (vd: 1 2)")
+            print("⚠️ Định dạng không đúng. Nhập hai số cách nhau bởi dấu cách (vd: 7 8)")
+        except KeyboardInterrupt:
+            print("\n👋 Bạn đã thoát game.")
+            return -1, -1
 
-def ask_continue(sock):
-    msg = sock.recv(1024).decode('utf-8')
-    print(msg)
-    ans = input().strip().lower()
-    sock.send(ans.encode('utf-8'))
-    return ans == 'y'
+def safe_recv(sock, timeout=30):
+    """Nhận dữ liệu an toàn với timeout"""
+    try:
+        sock.settimeout(timeout)
+        data = sock.recv(1024).decode('utf-8')
+        sock.settimeout(None)  # Reset timeout
+        return data
+    except socket.timeout:
+        print(f"⏰ Timeout sau {timeout} giây.")
+        return None
+    except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+        print("⛔ Kết nối bị ngắt.")
+        return None
+    except Exception as e:
+        print(f"⛔ Lỗi nhận dữ liệu: {e}")
+        return None
+
+def handle_continue_game(sock):
+    """Xử lý hỏi chơi lại"""
+    try:
+        # Nhận câu hỏi từ server
+        question = safe_recv(sock, 30)
+        if question is None:
+            return False
+            
+        print(f"\n🤔 {question}")
+        
+        while True:
+            answer = input("👉 Nhập lựa chọn: ").strip().lower()
+            if answer in ['y', 'yes', 'có', 'c']:
+                sock.send('y'.encode('utf-8'))
+                break
+            elif answer in ['n', 'no', 'không', 'k']:
+                sock.send('n'.encode('utf-8'))
+                break
+            else:
+                print("⚠️ Chỉ nhập 'y' (có) hoặc 'n' (không)")
+        
+        # Nhận phản hồi từ server
+        response = safe_recv(sock, 10)
+        if response:
+            print(f"📨 {response}")
+            
+            if "Bắt đầu ván mới" in response or "Bắt đầu ván" in response:
+                return True
+            elif "Kết thúc" in response:
+                return False
+                
+        return False
+        
+    except Exception as e:
+        print(f"⛔ Lỗi xử lý chơi lại: {e}")
+        return False
 
 def main():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect(("127.0.0.1", 9999))
-
-    start_msg = s.recv(1024).decode('utf-8')
-    print(start_msg)
-
-    symbol = "X" if "X" in start_msg else "O"
-    enemy_symbol = "O" if symbol == "X" else "X"
-
-    while True:
-        board = create_board()
-        print_board(board)
-        is_my_turn = symbol == "X"
-
-        # Vòng lặp chơi 1 ván
+    sock = None
+    
+    try:
+        # Kết nối đến server
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        print("🔗 Đang kết nối đến server...")
+        sock.connect(("127.0.0.1", 9999))
+        print("✅ Đã kết nối thành công!")
+        
+        # Nhận thông tin vai trò (X hoặc O)
+        start_msg = safe_recv(sock, 10)
+        if start_msg is None:
+            print("❌ Không nhận được thông tin từ server.")
+            return
+            
+        print(f"🎭 {start_msg}")
+        symbol = "X" if "X" in start_msg else "O"
+        enemy_symbol = "O" if symbol == "X" else "X"
+        
+        print(f"🎯 Bạn chơi với ký hiệu: {symbol}")
+        print(f"🎯 Đối thủ chơi với ký hiệu: {enemy_symbol}")
+        
+        game_count = 1
+        
         while True:
-            if is_my_turn:
-                x, y = get_valid_move(board, symbol)
-                board[x][y] = symbol
-                print_board(board)
-                if check_win(board, x, y, symbol):
-                    print("🎉 Bạn đã thắng!")
-                    send_move(s, -1, -1)
-                    break
-                send_move(s, x, y)
-            else:
-                print("⏳ Đang chờ đối thủ đánh...")
-                move = recv_move(s)
-                if move is None:
-                    return
-                x, y = move
-                if x == -1 and y == -1:
-                    print("❌ Đối thủ đã thắng. Bạn đã thua!")
-                    break
-                board[x][y] = enemy_symbol
-                print("📍 Đối thủ đã đánh:")
-                print_board(board)
-                if check_win(board, x, y, enemy_symbol):
-                    print("❌ Bạn đã thua!")
-                    break
-
-            is_my_turn = not is_my_turn
-
-        # Sau khi kết thúc ván, hỏi chơi lại
-        while True:
-            cont_msg = s.recv(1024).decode('utf-8')
-            print(cont_msg)
-            if "chơi lại" in cont_msg:
-                ans = input().strip().lower()
-                s.send(ans.encode('utf-8'))
-                # Chờ xác nhận từ server
-                confirm_msg = s.recv(1024).decode('utf-8')
-                print(confirm_msg)
-                if "Bắt đầu ván mới" in confirm_msg:
-                    break  # Thoát vòng hỏi để bắt đầu lại ván mới
-                elif "Kết thúc" in confirm_msg:
-                    s.close()
-                    return
-            elif "Kết thúc" in cont_msg:
-                s.close()
-                return
-            else:
-                ans = input().strip().lower()
-                s.send(ans.encode('utf-8'))
+            print(f"\n🎲 =================== VÁN {game_count} ===================")
+            
+            # Khởi tạo bàn cờ mới
+            board = create_board()
+            print(f"📋 Bàn cờ {BOARD_SIZE}x{BOARD_SIZE} đã được tạo:")
+            print_board(board)
+            
+            # Xác định ai đi trước (X luôn đi trước)
+            is_my_turn = (symbol == "X")
+            move_count = 0
+            game_over = False
+            
+            print(f"🚀 {'Bạn đi trước!' if is_my_turn else 'Đối thủ đi trước!'}")
+            
+            # Vòng lặp chơi một ván
+            while not game_over:
+                if is_my_turn:
+                    print(f"\n🎯 === LƯỢT CỦA BẠN ({symbol}) ===")
+                    
+                    # Người chơi nhập nước đi
+                    x, y = get_valid_move(board, symbol)
+                    
+                    # Kiểm tra thoát game
+                    if x == -1 and y == -1:
+                        print("📤 Gửi tín hiệu thoát...")
+                        send_move(sock, -1, -1)
+                        return
+                    
+                    # Thực hiện nước đi
+                    board[x][y] = symbol
+                    move_count += 1
+                    
+                    print(f"✅ Bạn đã đánh tại ({x}, {y})")
+                    print_board(board)
+                    
+                    # Kiểm tra thắng
+                    if check_win(board, x, y, symbol):
+                        print("🎉🎉🎉 CHÚC MỪNG! BẠN ĐÃ THẮNG! 🎉🎉🎉")
+                        send_move(sock, -1, -1)  # Gửi tín hiệu kết thúc
+                        game_over = True
+                        break
+                    
+                    # Gửi nước đi cho đối thủ
+                    if not send_move(sock, x, y):
+                        print("❌ Không thể gửi nước đi. Kết thúc game.")
+                        return
+                    
+                else:
+                    print(f"\n⏳ === LƯỢT CỦA ĐỐI THỦ ({enemy_symbol}) ===")
+                    print("⏳ Đang chờ đối thủ đánh...")
+                    
+                    # Nhận nước đi từ đối thủ
+                    move = recv_move(sock)
+                    if move is None:
+                        print("❌ Mất kết nối với đối thủ.")
+                        return
+                    
+                    x, y = move
+                    
+                    # Kiểm tra tín hiệu kết thúc (đối thủ thắng)
+                    if x == -1 and y == -1:
+                        print("💔💔💔 ĐỐI THỦ ĐÃ THẮNG! BẠN THUA! 💔💔💔")
+                        game_over = True
+                        break
+                    
+                    # Thực hiện nước đi của đối thủ
+                    board[x][y] = enemy_symbol
+                    move_count += 1
+                    
+                    print(f"📍 Đối thủ đã đánh tại ({x}, {y})")
+                    print_board(board)
+                    
+                    # Kiểm tra đối thủ có thắng không
+                    if check_win(board, x, y, enemy_symbol):
+                        print("💔💔💔 ĐỐI THỦ ĐÃ THẮNG! BẠN THUA! 💔💔💔")
+                        game_over = True
+                        break
+                
+                # Chuyển lượt
+                is_my_turn = not is_my_turn
+            
+            print(f"\n✅ Ván {game_count} kết thúc sau {move_count} nước đi.")
+            game_count += 1
+            
+            # Hỏi chơi lại
+            print("\n🔄 =================== HỎI CHƠI LẠI ===================")
+            continue_game = handle_continue_game(sock)
+            
+            if not continue_game:
+                print("👋 Kết thúc trò chơi. Cảm ơn bạn đã chơi!")
+                break
+            
+            print("\n🎊 Chuẩn bị ván mới...")
+    
+    except KeyboardInterrupt:
+        print("\n⚠️ Bạn đã dừng game (Ctrl+C)")
+    except ConnectionRefusedError:
+        print("❌ Không thể kết nối đến server. Kiểm tra server đã chạy chưa?")
+    except Exception as e:
+        print(f"❌ Lỗi không mong muốn: {e}")
+    
+    finally:
+        if sock:
+            try:
+                sock.close()
+                print("🔌 Đã đóng kết nối.")
+            except:
+                pass
 
 if __name__ == "__main__":
     main()
