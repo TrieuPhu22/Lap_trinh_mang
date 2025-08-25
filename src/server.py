@@ -30,8 +30,12 @@ def main():
                     if not move1:
                         print("❌ Người chơi 1 đã ngắt kết nối.")
                         break
+                    
+                    move1_data = move1.decode().strip()
                     conn2.sendall(move1)
-                    if move1.decode().strip() == "-1 -1":
+                    
+                    # Kiểm tra kết thúc ván
+                    if move1_data == "-1 -1" or move1_data == "TIMEOUT":
                         break
                 except Exception as e:
                     print("❌ Lỗi khi nhận dữ liệu từ người chơi 1:", e)
@@ -43,8 +47,12 @@ def main():
                     if not move2:
                         print("❌ Người chơi 2 đã ngắt kết nối.")
                         break
+                    
+                    move2_data = move2.decode().strip()
                     conn1.sendall(move2)
-                    if move2.decode().strip() == "-1 -1":
+                    
+                    # Kiểm tra kết thúc ván
+                    if move2_data == "-1 -1" or move2_data == "TIMEOUT":
                         break
                 except Exception as e:
                     print("❌ Lỗi khi nhận dữ liệu từ người chơi 2:", e)
