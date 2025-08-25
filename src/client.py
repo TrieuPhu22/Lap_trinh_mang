@@ -60,6 +60,7 @@ def send_move(sock, x, y):
     except:
         print("⛔ Gửi dữ liệu thất bại.")
 
+
 def send_timeout(sock):
     try:
         sock.send("TIMEOUT".encode())
