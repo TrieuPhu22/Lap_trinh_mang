@@ -91,7 +91,7 @@ def countdown_timer():
     # Nếu hết giờ và timer vẫn chạy
     if timer_running and time_left <= 0:
         global game_status
-        game_status = "⏰ TIME'S UP!"
+        game_status = "TIME'S UP!"
 
 def start_timer():
     global time_left, timer_running, timer_thread
@@ -113,18 +113,18 @@ def recv_move(sock):
         data = sock.recv(1024).decode().strip()
         if not data:
             global game_status
-            game_status = "⛔ Lost connection with opponent."
+            game_status = "Lost connection with opponent."
             return None
         
         # Kiểm tra nếu là thông báo hết giờ từ đối thủ
         if data == "TIMEOUT":
-            game_status = "🕒 Opponent ran out of time!"
+            game_status = "Opponent ran out of time!"
             return (-2, -2)  # Mã đặc biệt cho hết giờ
         
         x, y = map(int, data.split())
         return x, y
     except:
-        game_status = "⛔ Error receiving data from opponent."
+        game_status = "Error receiving data from opponent."
         return None
 
 def send_move(sock, x, y):
@@ -132,14 +132,14 @@ def send_move(sock, x, y):
         sock.send(f"{x} {y}".encode())
     except:
         global game_status
-        game_status = "⛔ Failed to send data."
+        game_status = "Failed to send data."
 
 def send_timeout(sock):
     try:
         sock.send("TIMEOUT".encode())
     except:
         global game_status
-        game_status = "⛔ Failed to send timeout notification."
+        game_status = "Failed to send timeout notification."
 
 def get_valid_move(board, symbol):
     global time_left, timer_running, game_status
@@ -171,7 +171,7 @@ def get_valid_move(board, symbol):
                             stop_timer()
                             return board_x, board_y
                         else:
-                            game_status = "⚠️ This cell is already taken!"
+                            game_status = "This cell is already taken!"
         
         # Vẽ bàn cờ trong quá trình chờ
         draw_board(board)
@@ -180,7 +180,7 @@ def get_valid_move(board, symbol):
         pygame.time.delay(50)
         
     if time_left <= 0:
-        game_status = "⏰ You ran out of time!"
+        game_status = "You ran out of time!"
         stop_timer()
         return (-2, -2)  # Mã đặc biệt cho hết giờ
     
@@ -262,12 +262,12 @@ def main():
             draw_board(board)
             
             if is_my_turn:
-                game_status = f"🕒 Your turn! You have {time_left} seconds to move."
+                game_status = f"Your turn! You have {time_left} seconds to move."
                 x, y = get_valid_move(board, my_symbol)
                 
                 # Kiểm tra hết giờ
                 if x == -2 and y == -2:
-                    game_status = "⏰ You lost due to timeout!"
+                    game_status = "You lost due to timeout!"
                     send_timeout(s)
                     game_running = False
                 elif x == -1 and y == -1:
@@ -283,7 +283,7 @@ def main():
                     else:
                         send_move(s, x, y)
             else:
-                game_status = "⏳ Waiting for opponent's move..."
+                game_status = "Waiting for opponent's move..."
                 draw_board(board)
                 
                 move = recv_move(s)
@@ -293,16 +293,16 @@ def main():
                 
                 x, y = move
                 if x == -1 and y == -1:
-                    game_status = "❌ Opponent won. You lost!"
+                    game_status = "Opponent won. You lost!"
                     game_running = False
                 elif x == -2 and y == -2:
-                    game_status = "🎉 Opponent ran out of time! You win!"
+                    game_status = "Opponent ran out of time! You win!"
                     game_running = False
                 else:
                     board[x][y] = enemy_symbol
-                    game_status = "📍 Opponent made a move"
+                    game_status = "Opponent made a move"
                     if check_win(board, x, y, enemy_symbol):
-                        game_status = "❌ You lost!"
+                        game_status = "You lost!"
                         game_running = False
 
             is_my_turn = not is_my_turn
